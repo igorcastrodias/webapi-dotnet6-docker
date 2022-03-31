@@ -12,7 +12,6 @@ variables:
   # Container registry service connection established during pipeline creation
   dockerRegistryServiceConnection: $(ServiceConnection)
   imageRepository: 'webapidotnetdocker'
-  containerRegistry: $(ContainerRegistry)
   dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
   tag: '$(Build.BuildId)'
 
@@ -28,6 +27,12 @@ stages:
     pool:
       vmImage: $(vmImageName)
     steps:
+    - task: Bash@3
+      name: ContainerRegistry
+      displayName: Obtem URL do ACR
+      inputs:
+        targetType: 'inline'
+        script: 'echo "##vso[task.setvariable variable=containerRegistry;isoutput=true]$(ContainerRegistryUrl)"'
     - task: Docker@2
       displayName: Build and push an image to container registry
       inputs:
@@ -35,5 +40,23 @@ stages:
         repository: $(imageRepository)
         dockerfile: $(dockerfilePath)
         containerRegistry: $(dockerRegistryServiceConnection)
-        tags: |
+        tags: | 
+          latest
           $(tag)
+- stage: Deployment
+  displayName: Deployment Azure App Service
+  dependsOn: Build
+  jobs:
+  - job: Deployment
+    variables:
+      containerRegistry: $[stageDependencies.Build.Build.outputs['ContainerRegistry.containerRegistry']]
+    displayName: Deployment Azure App Service
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - task: AzureWebAppContainer@1
+      displayName: Deployment Azure App Service com ACR
+      inputs:
+        azureSubscription: 'AzureResources'
+        appName: 'netdockerexample'
+        containers: '$(containerRegistry)/$(imageRepository):$(tag)'
